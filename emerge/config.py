@@ -125,6 +125,7 @@ class ConfigKeyExport(EnumKeyValid, Enum):
     TABULAR_CONSOLE_OVERALL = auto()
     JSON = auto()
     D3 = auto()
+    TSV = auto()
 
 
 @unique
@@ -446,6 +447,8 @@ class Configuration:
                         analysis.export_json = True
                     if ConfigKeyExport.D3.name.lower() in export_config:
                         analysis.export_d3 = True
+                    if ConfigKeyExport.TSV.name.lower() in export_config:
+                        analysis.export_tsv = True
 
             # check app config
             if ConfigKeyAnalysis.APPCONFIG.name.lower() in analysis_dict:

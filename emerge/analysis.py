@@ -24,7 +24,7 @@ from emerge.log import Logger
 from emerge.core import format_timedelta
 from emerge.files import truncate_directory, LanguageExtension
 
-from emerge.export import GraphExporter, TableExporter, JSONExporter, D3Exporter
+from emerge.export import GraphExporter, TableExporter, JSONExporter, D3Exporter, TSVExporter
 
 
 LOGGER = Logger(logging.getLogger('analysis'))
@@ -92,6 +92,7 @@ class Analysis:
 
         self.export_json: bool = False
         self.export_d3: bool = False
+        self.export_tsv: bool = False
 
         self.only_permit_languages: List[LanguageType] = []
         self.only_permit_file_extensions: List[str] = []
@@ -311,6 +312,22 @@ class Analysis:
         if self.export_json:
             JSONExporter.export_statistics_and_metrics(statistics, overall_metric_results,
                                                        local_metric_results, analysis_name, self.export_directory)
+
+        if self.export_tsv:
+            # Export entity metrics
+            TSVExporter.export_entity_metrics_as_tsv(
+                self, local_metric_results, analysis_name, self.export_directory
+            )
+            # Export namespace inventory
+            TSVExporter.export_namespace_inventory_as_tsv(
+                self, local_metric_results, self.export_directory
+            )
+            # Export dependencies (needs graph representations)
+            created_graph_representations = {k: v for (k, v) in self.graph_representations.items() if v is not None}
+            if created_graph_representations:
+                TSVExporter.export_dependencies_as_tsv(
+                    created_graph_representations, self.export_directory
+                )
 
         if self.export_tabular_console_overall:
             TableExporter.export_statistics_and_metrics_to_console(statistics, overall_metric_results, None, analysis_name)

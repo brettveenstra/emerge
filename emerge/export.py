@@ -6,10 +6,11 @@ Contains all classes related to exporters, e.g. GraphExporter.
 # License: MIT
 
 from typing import Dict, Any, Optional
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 # from logging import Logger
 import json
+import csv
 
 import logging
 import coloredlogs
@@ -527,3 +528,203 @@ class D3Exporter:
 
         with open(target_export_file_path, 'w', encoding="utf-8") as file:
             file.write(d3_js_string)
+
+
+class TSVExporter:
+    """Export analysis results as TSV (Tab-Separated Values) for Excel/spreadsheet analysis.
+
+    TSV format is more robust than CSV for code analysis because:
+    - File paths can contain commas (e.g., Windows: "C:\\Users\\John, Doe\\...")
+    - Class names/namespaces are unlikely to contain tab characters
+    - Excel and Google Sheets handle TSV natively
+    - No need to escape special characters
+    """
+
+    def __init__(self):
+        ...
+
+    @staticmethod
+    def export_entity_metrics_as_tsv(
+        analysis,
+        local_metric_results: Dict[str, Dict[str, Any]],
+        analysis_name: str,
+        export_dir: str
+    ):
+        """Export entity-level metrics to emerge-entity-metrics.tsv
+
+        Args:
+            analysis: The Analysis object containing entity results
+            local_metric_results: Dictionary of metrics keyed by unique_name
+            analysis_name: Name of the analysis
+            export_dir: Directory to export to
+        """
+        file_path = f'{export_dir}/emerge-entity-metrics.tsv'
+
+        LOGGER.info_start(f'exporting entity metrics to {file_path}')
+
+        with open(file_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f, delimiter='\t')
+
+            # Header row
+            writer.writerow([
+                'Entity',
+                'Namespace',
+                'File',
+                'Language',
+                'SLOC',
+                'NumberOfMethods',
+                'FanIn',
+                'FanOut',
+                'TFIDFKeywords'
+            ])
+
+            # Access entity results directly from analysis
+            entity_results = analysis.entity_results
+
+            # Data rows - iterate through entity results
+            for unique_name, entity_result in entity_results.items():
+                # Get metrics for this entity
+                metrics = local_metric_results.get(unique_name, {})
+
+                # Extract metrics with safe defaults
+                sloc = metrics.get('sloc-in-entity', 0)
+                num_methods = metrics.get('number-of-methods-in-entity', 0)
+                fan_in = metrics.get('fan-in-dependency-graph',
+                                    metrics.get('fan-in-inheritance-graph',
+                                    metrics.get('fan-in-complete-graph', 0)))
+                fan_out = metrics.get('fan-out-dependency-graph',
+                                     metrics.get('fan-out-inheritance-graph',
+                                     metrics.get('fan-out-complete-graph', 0)))
+
+                # TF-IDF keywords - get top 5
+                tfidf_keywords = metrics.get('tfidf-keywords-in-entity', [])
+                if isinstance(tfidf_keywords, list):
+                    keywords_str = ', '.join(tfidf_keywords[:5])
+                else:
+                    keywords_str = ''
+
+                writer.writerow([
+                    entity_result.entity_name,
+                    entity_result.module_name,
+                    entity_result.scanned_file_name,
+                    entity_result.scanned_language.name if hasattr(entity_result.scanned_language, 'name') else str(entity_result.scanned_language),
+                    sloc,
+                    num_methods,
+                    fan_in,
+                    fan_out,
+                    keywords_str
+                ])
+
+        LOGGER.info_done(f'exported {len(entity_results)} entity metrics to {file_path}')
+
+    @staticmethod
+    def export_dependencies_as_tsv(
+        graph_representations: Dict[str, GraphRepresentation],
+        export_dir: str
+    ):
+        """Export dependency relationships to emerge-dependencies.tsv
+
+        Args:
+            graph_representations: Dictionary of graph representations
+            export_dir: Directory to export to
+        """
+        file_path = f'{export_dir}/emerge-dependencies.tsv'
+
+        LOGGER.info_start(f'exporting dependencies to {file_path}')
+
+        with open(file_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f, delimiter='\t')
+
+            # Header row
+            writer.writerow(['FromEntity', 'ToEntity', 'DependencyType'])
+
+            total_edges = 0
+
+            # Export from entity dependency graph
+            if GraphType.ENTITY_RESULT_DEPENDENCY_GRAPH.name.lower() in graph_representations:
+                dep_graph = graph_representations[GraphType.ENTITY_RESULT_DEPENDENCY_GRAPH.name.lower()]
+                for source, target in dep_graph.digraph.edges():
+                    writer.writerow([source, target, 'dependency'])
+                    total_edges += 1
+
+            # Export from entity inheritance graph
+            if GraphType.ENTITY_RESULT_INHERITANCE_GRAPH.name.lower() in graph_representations:
+                inh_graph = graph_representations[GraphType.ENTITY_RESULT_INHERITANCE_GRAPH.name.lower()]
+                for source, target in inh_graph.digraph.edges():
+                    writer.writerow([source, target, 'inheritance'])
+                    total_edges += 1
+
+        LOGGER.info_done(f'exported {total_edges} dependency relationships to {file_path}')
+
+    @staticmethod
+    def export_namespace_inventory_as_tsv(
+        analysis,
+        local_metric_results: Dict[str, Dict[str, Any]],
+        export_dir: str
+    ):
+        """Export namespace inventory to emerge-namespaces.tsv
+
+        Args:
+            analysis: The Analysis object containing entity results
+            local_metric_results: Dictionary of metrics keyed by unique_name
+            export_dir: Directory to export to
+        """
+        file_path = f'{export_dir}/emerge-namespaces.tsv'
+
+        LOGGER.info_start(f'exporting namespace inventory to {file_path}')
+
+        # Aggregate metrics by namespace
+        namespace_data = defaultdict(lambda: {
+            'files': set(),
+            'entities': 0,
+            'total_sloc': 0,
+            'total_methods': 0,
+            'complexities': []
+        })
+
+        # Access entity results directly from analysis
+        entity_results = analysis.entity_results
+
+        for unique_name, entity_result in entity_results.items():
+            namespace = entity_result.module_name if entity_result.module_name else '<root>'
+            metrics = local_metric_results.get(unique_name, {})
+
+            # Aggregate data
+            namespace_data[namespace]['files'].add(entity_result.scanned_file_name)
+            namespace_data[namespace]['entities'] += 1
+            namespace_data[namespace]['total_sloc'] += metrics.get('sloc-in-entity', 0)
+            namespace_data[namespace]['total_methods'] += metrics.get('number-of-methods-in-entity', 0)
+
+            # Collect complexity if available
+            ws_complexity = metrics.get('ws-complexity-in-entity', None)
+            if ws_complexity is not None:
+                namespace_data[namespace]['complexities'].append(ws_complexity)
+
+        with open(file_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f, delimiter='\t')
+
+            # Header row
+            writer.writerow([
+                'Namespace',
+                'Files',
+                'Entities',
+                'SLOC',
+                'Methods',
+                'AvgComplexity'
+            ])
+
+            # Data rows (sorted by namespace)
+            for namespace in sorted(namespace_data.keys()):
+                data = namespace_data[namespace]
+                avg_complexity = sum(data['complexities']) / len(data['complexities']) if data['complexities'] else 0
+
+                writer.writerow([
+                    namespace,
+                    len(data['files']),
+                    data['entities'],
+                    data['total_sloc'],
+                    data['total_methods'],
+                    round(avg_complexity, 2)
+                ])
+
+        LOGGER.info_done(f'exported {len(namespace_data)} namespaces to {file_path}')

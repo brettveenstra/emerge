@@ -51,6 +51,7 @@ The main goal of this project is to create a free/ open source tool, that can ea
     - Includes the extraction of `SwiftUI` and `Composable` declarative UI entities
   - A Filesystem graph that shows the project filesystem hierarchy as a graph
   - [GraphML](http://graphml.graphdrawing.org)
+  - TSV (Tab-Separated Values) for Excel/spreadsheet analysis
   - JavaScript format suited for a [D3 force graph simulation](https://github.com/d3/d3-force)
   - Interactive HTML/ web application for interactive, exploratory analysis and data visualization of your project based on graph structures
     - HTML app is based on [Bootstrap](https://getbootstrap.com)
@@ -224,6 +225,7 @@ analyses:
   - directory: /Users/user1/emerge/project/export
   - graphml
   - json
+  - tsv
   - tabular_file
   - tabular_console_overall
   - d3
@@ -470,6 +472,7 @@ analyses:
   - directory: /Users/user1/emerge/project/export
   - graphml
   - json
+  - tsv
   - tabular_file
   - tabular_console_overall
   - d3
@@ -518,6 +521,7 @@ analyses:
   - directory: /Users/user1/emerge/project/export
   - graphml
   - json
+  - tsv
   - tabular_file
   - tabular_console_overall
   - d3
@@ -615,6 +619,7 @@ The yaml configuration is basically defined at the following levels:
 | `tabular_console`         | print a tabular formatted output to console that contains every metric and statistic result |
 | `tabular_console_overall` | print a tabular formatted output to console that contains only overall metric and statistic results |
 | `json`                    | create a JSON file that contains every metric and statistic result |
+| `tsv`                     | create TSV (Tab-Separated Values) files for Excel/spreadsheet analysis (entity metrics, dependencies, namespace inventory) |
 | `d3`                      | create a Bootstrap/D3 web application in the subfolder `force-graph-html` for further visual and interactive/ exploratory analysis |
 |                           | |
 
