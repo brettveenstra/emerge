@@ -18,6 +18,7 @@ analyses:
   file_scan:
   - number_of_methods
   - source_lines_of_code
+  - cyclomatic_complexity
   - dependency_graph
   - fan_in_out
   - louvain_modularity
@@ -28,6 +29,7 @@ analyses:
   - complete_graph
   - source_lines_of_code
   - number_of_methods
+  - cyclomatic_complexity
   - fan_in_out
   - louvain_modularity
   - tfidf

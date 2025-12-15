@@ -573,6 +573,8 @@ class TSVExporter:
                 'Language',
                 'SLOC',
                 'NumberOfMethods',
+                'AvgComplexity',
+                'MaxComplexity',
                 'FanIn',
                 'FanOut',
                 'TFIDFKeywords'
@@ -589,6 +591,8 @@ class TSVExporter:
                 # Extract metrics with safe defaults
                 sloc = metrics.get('sloc-in-entity', 0)
                 num_methods = metrics.get('number-of-methods-in-entity', 0)
+                avg_complexity = metrics.get('avg-cyclomatic-complexity-in-entity', 0)
+                max_complexity = metrics.get('max-cyclomatic-complexity-in-entity', 0)
                 fan_in = metrics.get('fan-in-dependency-graph',
                                     metrics.get('fan-in-inheritance-graph',
                                     metrics.get('fan-in-complete-graph', 0)))
@@ -610,6 +614,8 @@ class TSVExporter:
                     entity_result.scanned_language.name if hasattr(entity_result.scanned_language, 'name') else str(entity_result.scanned_language),
                     sloc,
                     num_methods,
+                    round(avg_complexity, 2) if avg_complexity else 0,
+                    max_complexity,
                     fan_in,
                     fan_out,
                     keywords_str
@@ -695,10 +701,10 @@ class TSVExporter:
             namespace_data[namespace]['total_sloc'] += metrics.get('sloc-in-entity', 0)
             namespace_data[namespace]['total_methods'] += metrics.get('number-of-methods-in-entity', 0)
 
-            # Collect complexity if available
-            ws_complexity = metrics.get('ws-complexity-in-entity', None)
-            if ws_complexity is not None:
-                namespace_data[namespace]['complexities'].append(ws_complexity)
+            # Collect cyclomatic complexity if available
+            cyclomatic_complexity = metrics.get('cyclomatic-complexity-in-entity', None)
+            if cyclomatic_complexity is not None:
+                namespace_data[namespace]['complexities'].append(cyclomatic_complexity)
 
         with open(file_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f, delimiter='\t')

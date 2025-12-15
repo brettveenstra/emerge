@@ -18,6 +18,7 @@ analyses:
   file_scan:
   - number_of_methods
   - source_lines_of_code
+  - cyclomatic_complexity
   - dependency_graph
   - louvain_modularity
   - fan_in_out

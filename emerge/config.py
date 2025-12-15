@@ -25,6 +25,7 @@ from emerge.metrics.modularity.modularity import LouvainModularityMetric
 from emerge.metrics.tfidf.tfidf import TFIDFMetric
 from emerge.metrics.git.git import GitMetrics
 from emerge.metrics.whitespace.whitespace import WhitespaceMetric
+from emerge.metrics.cyclomaticcomplexity.cyclomaticcomplexity import CyclomaticComplexityMetric
 
 from emerge.graph import GraphType
 from emerge.log import Logger
@@ -93,6 +94,7 @@ class ConfigKeyFileScan(EnumKeyValid, Enum):
     """Config key checks of the file scan level."""
     GIT = auto()
     WS_COMPLEXITY = auto()
+    CYCLOMATIC_COMPLEXITY = auto()
     NUMBER_OF_METHODS = auto()
     SOURCE_LINES_OF_CODE = auto()
     DEPENDENCY_GRAPH = auto()
@@ -104,6 +106,7 @@ class ConfigKeyFileScan(EnumKeyValid, Enum):
 @unique
 class ConfigKeyEntityScan(EnumKeyValid, Enum):
     """Config key checks of the entity scan level."""
+    CYCLOMATIC_COMPLEXITY = auto()
     NUMBER_OF_METHODS = auto()
     SOURCE_LINES_OF_CODE = auto()
     NUMBER_OF_ENTITIES = auto()
@@ -581,6 +584,14 @@ class Configuration:
                             source_lines_of_code_metric.metric_name: source_lines_of_code_metric
                         })
 
+                    # cyclomatic complexity
+                    if configured_metric == ConfigKeyFileScan.CYCLOMATIC_COMPLEXITY.name.lower():
+                        cyclomatic_complexity_metric = CyclomaticComplexityMetric(analysis)
+                        LOGGER.debug(f'adding {cyclomatic_complexity_metric.pretty_metric_name}...')
+                        analysis.metrics_for_file_results.update({
+                            cyclomatic_complexity_metric.metric_name: cyclomatic_complexity_metric
+                        })
+
                     # fan-in, fan-out
                     if ConfigKeyFileScan.FAN_IN_OUT.name.lower() in configured_metric:
                         LOGGER.debug(f'adding {FanInOutMetric.pretty_metric_name}...')
@@ -654,6 +665,14 @@ class Configuration:
                         source_lines_of_code_metric = SourceLinesOfCodeMetric(analysis)
                         analysis.metrics_for_entity_results.update({
                             source_lines_of_code_metric.metric_name: source_lines_of_code_metric
+                        })
+
+                    # cyclomatic complexity
+                    if configured_metric == ConfigKeyEntityScan.CYCLOMATIC_COMPLEXITY.name.lower():
+                        LOGGER.debug(f'adding {CyclomaticComplexityMetric.pretty_metric_name}...')
+                        cyclomatic_complexity_metric = CyclomaticComplexityMetric(analysis)
+                        analysis.metrics_for_entity_results.update({
+                            cyclomatic_complexity_metric.metric_name: cyclomatic_complexity_metric
                         })
 
                     # fan-in, fan-out

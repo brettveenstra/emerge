@@ -35,7 +35,7 @@ The main goal of this project is to create a free/ open source tool, that can ea
 
 - File scan support for the following languages: `C`, `C++`, `Groovy`, `Java`, `JavaScript`, `TypeScript`, `Kotlin`, `ObjC`, `Ruby`, `Swift`, `Python`
 - Basic entity scan/extraction (e.g. classes) for the following languages: `Groovy`, `Java`, `Kotlin`, `Swift`
-- Implementation of the following software metrics: SLOC, Whitespace Complexity (impl. by A. Tornhill), Number of Methods, Fan-In/Fan-Out, Modularity (Louvain)
+- Implementation of the following software metrics: SLOC, Cyclomatic Complexity (McCabe), Whitespace Complexity (impl. by A. Tornhill), Number of Methods, Fan-In/Fan-Out, Modularity (Louvain)
 - Experimental implementation of additional `git-based` metrics (SLOC, Whitespace Complexity, Change Coupling)
 - Infer meaning by feature/semantic keyword extraction based on [term frequency-inverse document frequency](https://en.wikipedia.org/wiki/Tf–idf)
 - Logging support with configurable log levels
@@ -588,6 +588,7 @@ The yaml configuration is basically defined at the following levels:
 | `dependency_graph`     | create a dependency graph structure based on source files, additional metrics will be added to the graph nodes |
 | `source_lines_of_code` | apply a source lines of code metric to every file, create an overall metric |
 | `number_of_methods`    | apply a number of methods metric to every file, create an overall metric |
+| `cyclomatic_complexity`| apply McCabe cyclomatic complexity metric to every file (avg, max, total per file), identify complex methods needing refactoring |
 | `fan_in_out`           | apply a fan in/ fan out graph metric to every file, create an overall metric |
 | `louvain_modularity`   | apply a louvain modularity metric to every file, create an overall metric |
 | `tfidf`                | apply a tfidf metric to every file and extract relevant semantic keywords|
@@ -604,6 +605,7 @@ The yaml configuration is basically defined at the following levels:
 | `complete_graph`       | create a complete graph structure (union of dependency/ inheritance graph) based on extracted entities from files, additional metrics will be added to the graph nodes |
 | `source_lines_of_code` | apply a source lines of code metric to every entity, create an overall metric |
 | `number_of_methods`    | apply a number of methods metric to every entity, create an overall metric |
+| `cyclomatic_complexity`| apply McCabe cyclomatic complexity metric to every entity (avg, max, total per class), identify complex methods needing refactoring |
 | `fan_in_out`           | apply a fan in/ fan out graph metric to every entity, create an overall metric |
 | `louvain_modularity`   | apply a louvain modularity metric to every entity, create an overall metric |
 | `tfidf`                | apply a tfidf metric to every entity and extract relevant semantic keywords|
