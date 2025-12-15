@@ -679,10 +679,35 @@ class TSVExporter:
 
         LOGGER.info_start(f'exporting namespace inventory to {file_path}')
 
+        # Helper function to detect entity type from tokens
+        def detect_entity_type(entity_result):
+            """Detect entity type (class, interface, struct, enum, record) from scanned tokens"""
+            tokens = entity_result.scanned_tokens if hasattr(entity_result, 'scanned_tokens') else []
+            tokens_lower = [t.lower() for t in tokens]
+
+            # Check for entity type keywords (in order of specificity)
+            if 'interface' in tokens_lower:
+                return 'interface'
+            elif 'struct' in tokens_lower:
+                return 'struct'
+            elif 'enum' in tokens_lower:
+                return 'enum'
+            elif 'record' in tokens_lower:
+                return 'record'
+            elif 'class' in tokens_lower:
+                return 'class'
+            else:
+                return 'class'  # Default to class if unknown
+
         # Aggregate metrics by namespace
         namespace_data = defaultdict(lambda: {
             'files': set(),
             'entities': 0,
+            'classes': 0,
+            'interfaces': 0,
+            'structs': 0,
+            'enums': 0,
+            'records': 0,
             'total_sloc': 0,
             'total_methods': 0,
             'complexities': []
@@ -695,9 +720,25 @@ class TSVExporter:
             namespace = entity_result.module_name if entity_result.module_name else '<root>'
             metrics = local_metric_results.get(unique_name, {})
 
+            # Detect entity type
+            entity_type = detect_entity_type(entity_result)
+
             # Aggregate data
             namespace_data[namespace]['files'].add(entity_result.scanned_file_name)
             namespace_data[namespace]['entities'] += 1
+
+            # Count by entity type
+            if entity_type == 'class':
+                namespace_data[namespace]['classes'] += 1
+            elif entity_type == 'interface':
+                namespace_data[namespace]['interfaces'] += 1
+            elif entity_type == 'struct':
+                namespace_data[namespace]['structs'] += 1
+            elif entity_type == 'enum':
+                namespace_data[namespace]['enums'] += 1
+            elif entity_type == 'record':
+                namespace_data[namespace]['records'] += 1
+
             namespace_data[namespace]['total_sloc'] += metrics.get('sloc-in-entity', 0)
             namespace_data[namespace]['total_methods'] += metrics.get('number-of-methods-in-entity', 0)
 
@@ -706,31 +747,87 @@ class TSVExporter:
             if cyclomatic_complexity is not None:
                 namespace_data[namespace]['complexities'].append(cyclomatic_complexity)
 
+        # Add hierarchical aggregation (parent namespaces include children)
+        hierarchical_data = {}
+        for namespace in namespace_data.keys():
+            # Create entry for this namespace and all parent namespaces
+            parts = namespace.split('.')
+            for i in range(len(parts)):
+                parent_ns = '.'.join(parts[:i+1])
+                if parent_ns not in hierarchical_data:
+                    hierarchical_data[parent_ns] = {
+                        'files': set(),
+                        'entities': 0,
+                        'classes': 0,
+                        'interfaces': 0,
+                        'structs': 0,
+                        'enums': 0,
+                        'records': 0,
+                        'total_sloc': 0,
+                        'total_methods': 0,
+                        'complexities': [],
+                        'direct': False  # Whether this namespace has direct entities
+                    }
+
+        # Mark namespaces that have direct entities
+        for namespace in namespace_data.keys():
+            if namespace in hierarchical_data:
+                hierarchical_data[namespace]['direct'] = True
+
+        # Aggregate data hierarchically
+        for namespace, data in namespace_data.items():
+            parts = namespace.split('.')
+            for i in range(len(parts)):
+                parent_ns = '.'.join(parts[:i+1])
+                hierarchical_data[parent_ns]['files'].update(data['files'])
+                hierarchical_data[parent_ns]['entities'] += data['entities']
+                hierarchical_data[parent_ns]['classes'] += data['classes']
+                hierarchical_data[parent_ns]['interfaces'] += data['interfaces']
+                hierarchical_data[parent_ns]['structs'] += data['structs']
+                hierarchical_data[parent_ns]['enums'] += data['enums']
+                hierarchical_data[parent_ns]['records'] += data['records']
+                hierarchical_data[parent_ns]['total_sloc'] += data['total_sloc']
+                hierarchical_data[parent_ns]['total_methods'] += data['total_methods']
+                hierarchical_data[parent_ns]['complexities'].extend(data['complexities'])
+
         with open(file_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f, delimiter='\t')
 
-            # Header row
+            # Header row (enhanced with entity type breakdown and max complexity)
             writer.writerow([
                 'Namespace',
                 'Files',
                 'Entities',
+                'Classes',
+                'Interfaces',
+                'Structs',
+                'Enums',
+                'Records',
                 'SLOC',
                 'Methods',
-                'AvgComplexity'
+                'AvgComplexity',
+                'MaxComplexity'
             ])
 
             # Data rows (sorted by namespace)
-            for namespace in sorted(namespace_data.keys()):
-                data = namespace_data[namespace]
+            for namespace in sorted(hierarchical_data.keys()):
+                data = hierarchical_data[namespace]
                 avg_complexity = sum(data['complexities']) / len(data['complexities']) if data['complexities'] else 0
+                max_complexity = max(data['complexities']) if data['complexities'] else 0
 
                 writer.writerow([
                     namespace,
                     len(data['files']),
                     data['entities'],
+                    data['classes'],
+                    data['interfaces'],
+                    data['structs'],
+                    data['enums'],
+                    data['records'],
                     data['total_sloc'],
                     data['total_methods'],
-                    round(avg_complexity, 2)
+                    round(avg_complexity, 2),
+                    max_complexity
                 ])
 
-        LOGGER.info_done(f'exported {len(namespace_data)} namespaces to {file_path}')
+        LOGGER.info_done(f'exported {len(hierarchical_data)} namespaces (hierarchical) to {file_path}')
