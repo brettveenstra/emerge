@@ -45,7 +45,8 @@ class TFIDFMetric(CodeMetric):
             "C":          {'return', 'int', 'static', 'void', 'case', 'break', 'const', 'struct', 'printf', 'fprintf', 'unsigned', 'extern', 'char', 'float', 'sizeof', 'unsinged', 'undef', 'define'},
             "CPP":        {'return', 'int', 'static', 'void', 'case', 'break', 'const', 'struct', 'printf', 'fprintf', 'unsigned', 'extern', 'char', 'float', 'sizeof', 'string', 'bool', 'virtual', 'override', 'nullptr', 'final', 'inline', 'template'},
             "PY":         {'return', 'self', 'import', 'enum', 'true', 'false', 'none', 'class', 'cls', 'super', 'not'},
-            "GO":         {'return', 'nil', 'defer', 'func', 'default'}
+            "GO":         {'return', 'nil', 'defer', 'func', 'default'},
+            "CSHARP":     {'true', 'false', 'null', 'throw', 'return', 'static', 'public', 'private', 'protected', 'internal', 'abstract', 'sealed', 'virtual', 'override', 'async', 'await', 'delegate', 'event', 'get', 'set', 'value', 'var', 'using', 'namespace', 'class', 'interface', 'struct', 'enum', 'record', 'new', 'this', 'base', 'typeof', 'nameof', 'void', 'string', 'int', 'bool', 'long', 'double', 'decimal', 'char', 'object', 'readonly', 'const', 'partial', 'init', 'required'}
         }
 
         """The following natural language stopwords should be excluded from the TF-IDF calculation."""

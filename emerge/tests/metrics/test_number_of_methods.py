@@ -22,6 +22,7 @@ from tests.testdata.ruby import RUBY_TEST_FILES
 from tests.testdata.swift import SWIFT_TEST_FILES
 from tests.testdata.py import PYTHON_TEST_FILES
 from tests.testdata.go import GO_TEST_FILES
+from tests.testdata.csharp import CSHARP_TEST_FILES
 
 from emerge.languages.cparser import CParser
 from emerge.languages.cppparser import CPPParser
@@ -35,6 +36,7 @@ from emerge.languages.rubyparser import RubyParser
 from emerge.languages.swiftparser import SwiftParser
 from emerge.languages.pyparser import PythonParser
 from emerge.languages.goparser import GoParser
+from emerge.languages.csharpparser import CSharpParser
 from emerge.languages.abstractparser import AbstractParser
 
 from emerge.analysis import Analysis
@@ -62,7 +64,8 @@ class NumberOfMethodsTestCase(unittest.TestCase):
             RubyParser.parser_name(): RUBY_TEST_FILES,
             SwiftParser.parser_name(): SWIFT_TEST_FILES,
             PythonParser.parser_name(): PYTHON_TEST_FILES,
-            GoParser.parser_name(): GO_TEST_FILES
+            GoParser.parser_name(): GO_TEST_FILES,
+            CSharpParser.parser_name(): CSHARP_TEST_FILES
         }
 
         self.parsers: Dict[str, AbstractParser] = {
@@ -77,7 +80,8 @@ class NumberOfMethodsTestCase(unittest.TestCase):
             RubyParser.parser_name(): RubyParser(),
             SwiftParser.parser_name(): SwiftParser(),
             PythonParser.parser_name(): PythonParser(),
-            GoParser.parser_name(): GoParser()
+            GoParser.parser_name(): GoParser(),
+            CSharpParser.parser_name(): CSharpParser()
         }
 
         self.analysis = Analysis()
