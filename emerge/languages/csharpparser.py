@@ -31,6 +31,7 @@ class CSharpParsingKeyword(Enum):
     STRUCT = "struct"
     ENUM = "enum"
     RECORD = "record"
+    PARTIAL = "partial"
 
     # Scope delimiters
     OPEN_SCOPE = "{"
@@ -156,18 +157,21 @@ class CSharpParser(AbstractParser, ParsingMixin):
             entity_name = pp.Word(pp.alphanums + CoreParsingKeyword.UNDERSCORE.value)
 
             match_expression = (
-                pp.Keyword(CSharpParsingKeyword.CLASS.value) |
-                pp.Keyword(CSharpParsingKeyword.INTERFACE.value) |
-                pp.Keyword(CSharpParsingKeyword.STRUCT.value) |
-                pp.Keyword(CSharpParsingKeyword.ENUM.value) |
-                pp.Keyword(CSharpParsingKeyword.RECORD.value)
-            ) + \
-                entity_name.setResultsName(CoreParsingKeyword.ENTITY_NAME.value) + \
+                pp.Optional(pp.Keyword(CSharpParsingKeyword.PARTIAL.value)).setResultsName('is_partial') +
+                (
+                    pp.Keyword(CSharpParsingKeyword.CLASS.value) |
+                    pp.Keyword(CSharpParsingKeyword.INTERFACE.value) |
+                    pp.Keyword(CSharpParsingKeyword.STRUCT.value) |
+                    pp.Keyword(CSharpParsingKeyword.ENUM.value) |
+                    pp.Keyword(CSharpParsingKeyword.RECORD.value)
+                ) +
+                entity_name.setResultsName(CoreParsingKeyword.ENTITY_NAME.value) +
                 pp.Optional(
                     pp.Keyword(CoreParsingKeyword.COLON.value) +
                     pp.delimitedList(entity_name, delim=',').setResultsName(CoreParsingKeyword.INHERITED_ENTITY_NAME.value)
-                ) + \
+                ) +
                 pp.SkipTo(pp.FollowedBy(CSharpParsingKeyword.OPEN_SCOPE.value))
+            )
 
             comment_keywords: Dict[str, str] = {
                 CoreParsingKeyword.LINE_COMMENT.value: CSharpParsingKeyword.INLINE_COMMENT.value,
@@ -182,7 +186,14 @@ class CSharpParser(AbstractParser, ParsingMixin):
                 self._add_inheritance_to_entity_result(entity_result)
                 self._add_imports_to_entity_result(entity_result)
                 self.create_unique_entity_name(entity_result)
-                self._results[entity_result.unique_name] = entity_result
+
+                # For partial entities, use absolute_name as key to prevent overwrites
+                # We'll fix the unique_name during merging
+                storage_key = entity_result.absolute_name if entity_result.is_partial else entity_result.unique_name
+                self._results[storage_key] = entity_result
+
+        # Merge partial entities after all entities have been generated
+        self._merge_partial_entities(analysis)
 
     def _add_imports_to_entity_result(self, entity_result: EntityResult):
         LOGGER.debug('adding usings to entity result...')
@@ -191,6 +202,61 @@ class CSharpParser(AbstractParser, ParsingMixin):
             for token in entity_result.scanned_tokens:
                 if last_component_of_import in token and scanned_import not in entity_result.scanned_import_dependencies:
                     entity_result.scanned_import_dependencies.append(scanned_import)
+
+    def _merge_partial_entities(self, analysis):
+        """Merge partial class/struct/interface declarations into single entities."""
+        LOGGER.debug('merging partial entities...')
+
+        # Get all entity results for this analysis (may be keyed by absolute_name for partials)
+        entity_results = [(k, v) for (k, v) in self.results.items()
+                         if v.analysis is analysis and isinstance(v, EntityResult)]
+
+        # Group partial entities by their unique name (namespace.entityname)
+        partial_groups: Dict[str, List[tuple]] = {}
+        for storage_key, entity in entity_results:
+            if entity.is_partial:
+                # Group by the entity's unique_name (namespace.entityname), not storage key
+                if entity.unique_name not in partial_groups:
+                    partial_groups[entity.unique_name] = []
+                partial_groups[entity.unique_name].append((storage_key, entity))
+
+        # Merge groups that have multiple partial entities
+        for unique_name, partials in partial_groups.items():
+            if len(partials) > 1:
+                LOGGER.debug(f'merging {len(partials)} partial declarations of {unique_name}')
+
+                # Use first partial as the base (keep its file reference)
+                primary_key, primary = partials[0]
+
+                # Merge tokens from all other partials
+                for storage_key, partial in partials[1:]:
+                    primary.scanned_tokens.extend(partial.scanned_tokens)
+
+                    # Merge import dependencies (avoid duplicates)
+                    for dep in partial.scanned_import_dependencies:
+                        if dep not in primary.scanned_import_dependencies:
+                            primary.scanned_import_dependencies.append(dep)
+
+                    # Merge inheritance dependencies (avoid duplicates)
+                    for inh in partial.scanned_inheritance_dependencies:
+                        if inh not in primary.scanned_inheritance_dependencies:
+                            primary.scanned_inheritance_dependencies.append(inh)
+
+                    # Remove the merged partial from results (using its storage key)
+                    del self._results[storage_key]
+
+                # Update storage: remove primary from old key, add to unique_name key
+                if primary_key != primary.unique_name:
+                    del self._results[primary_key]
+                    self._results[primary.unique_name] = primary
+
+                LOGGER.debug(f'merged partial entity {unique_name} from {len(partials)} files')
+            elif len(partials) == 1:
+                # Single partial entity - update storage key from absolute_name to unique_name
+                storage_key, entity = partials[0]
+                if storage_key != entity.unique_name:
+                    del self._results[storage_key]
+                    self._results[entity.unique_name] = entity
 
     def _add_usings_to_result(self, result: FileResult, analysis):
         LOGGER.debug(f'extracting usings from file result {result.scanned_file_name}...')

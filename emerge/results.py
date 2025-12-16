@@ -37,7 +37,8 @@ class EntityResult(AbstractEntityResult):
                  entity_name: str,
                  module_name: str,
                  unique_name: str,
-                 parent_file_result: 'FileResult'
+                 parent_file_result: 'FileResult',
+                 is_partial: bool = False
                  ):
         self._analysis = analysis
         self._scanned_file_name = scanned_file_name
@@ -51,6 +52,7 @@ class EntityResult(AbstractEntityResult):
         self._module_name = module_name
         self._unique_name = unique_name
         self._parent_file_result = parent_file_result
+        self._is_partial = is_partial
         self._scanned_inheritance_dependencies: List[str] = []
         self._metrics: Dict = {}
 
@@ -155,6 +157,14 @@ class EntityResult(AbstractEntityResult):
     @parent_file_result.setter
     def parent_file_result(self, value):
         self._parent_file_result = value
+
+    @property
+    def is_partial(self) -> bool:
+        return self._is_partial
+
+    @is_partial.setter
+    def is_partial(self, value):
+        self._is_partial = value
 
 
 class FileResult(AbstractFileResult, ParsingMixin):
@@ -383,9 +393,14 @@ class FileResult(AbstractFileResult, ParsingMixin):
 
         filtered_list_no_comments = self.preprocess_file_content_and_generate_token_list(source_string_no_comments)
 
-        for _, obj, following in self._gen_word_read_ahead(filtered_list_no_comments):
+        for _, obj, previous, following in self._gen_word_before_and_read_ahead(filtered_list_no_comments):
             if obj in entity_keywords:
-                read_ahead_string = self.create_read_ahead_string(obj, following)
+                # Check if "partial" keyword precedes this entity keyword
+                tokens_to_parse = [obj]
+                if previous and len(previous) > 0 and previous[-1] == 'partial':
+                    tokens_to_parse = ['partial', obj]
+
+                read_ahead_string = self.create_read_ahead_string(' '.join(tokens_to_parse), following)
 
                 try:
                     parsing_result = entity_expression.parseString(read_ahead_string)
@@ -398,8 +413,11 @@ class FileResult(AbstractFileResult, ParsingMixin):
                 LOGGER.debug(f'entity definition found: {parsing_result.entity_name}')
                 self.analysis.statistics.increment(Statistics.Key.PARSING_HITS)
 
+                # Check if entity is partial
+                is_partial = bool(getattr(parsing_result, 'is_partial', None))
+
                 scope_level = 0
-                found_entities[parsing_result.entity_name] = []
+                found_entities[parsing_result.entity_name] = {'tokens': [], 'is_partial': is_partial}
                 all_tokens = [obj] + following
                 for token in all_tokens:
                     if token == open_scope_character:
@@ -411,9 +429,11 @@ class FileResult(AbstractFileResult, ParsingMixin):
                             break
 
                     if parsing_result.entity_name in found_entities:
-                        found_entities[parsing_result.entity_name].append(token)
+                        found_entities[parsing_result.entity_name]['tokens'].append(token)
 
-        for entity_name, tokens in found_entities.items():
+        for entity_name, entity_data in found_entities.items():
+            tokens = entity_data['tokens']
+            is_partial = entity_data['is_partial']
 
             unique_entity_name = self.absolute_name + "/" + entity_name
             entity_result = EntityResult(
@@ -428,7 +448,8 @@ class FileResult(AbstractFileResult, ParsingMixin):
                 entity_name=entity_name,
                 module_name=self.module_name,
                 unique_name=entity_name,
-                parent_file_result=self
+                parent_file_result=self,
+                is_partial=is_partial
             )
 
             created_entity_results.append(entity_result)
