@@ -185,6 +185,7 @@ class CSharpParser(AbstractParser, ParsingMixin):
             for entity_result in entity_results:
                 self._add_inheritance_to_entity_result(entity_result)
                 self._add_imports_to_entity_result(entity_result)
+                self._add_property_dependencies_to_entity_result(entity_result)
                 self.create_unique_entity_name(entity_result)
 
                 # For partial entities, use absolute_name as key to prevent overwrites
@@ -202,6 +203,76 @@ class CSharpParser(AbstractParser, ParsingMixin):
             for token in entity_result.scanned_tokens:
                 if last_component_of_import in token and scanned_import not in entity_result.scanned_import_dependencies:
                     entity_result.scanned_import_dependencies.append(scanned_import)
+
+    def _add_property_dependencies_to_entity_result(self, entity_result: EntityResult):
+        """Extract property type dependencies from entity tokens."""
+        LOGGER.debug(f'extracting property dependencies from entity {entity_result.entity_name}...')
+
+        list_of_words = entity_result.scanned_tokens
+
+        # Simple pattern matching for properties: look for { get; or { set;
+        # which are strong indicators of property declarations
+        for i, token in enumerate(list_of_words):
+            if token == '{' and i > 1:
+                # Look ahead for 'get' or 'set'
+                is_property = False
+                if i + 1 < len(list_of_words):
+                    next_token = list_of_words[i + 1]
+                    if next_token in ['get', 'set']:
+                        is_property = True
+
+                if is_property:
+                    # Look backward to find the property type
+                    # Pattern: [modifiers...] Type PropertyName {
+                    # We want the Type (second-to-last token before {)
+                    if i >= 2:
+                        property_name_token = list_of_words[i - 1]
+                        property_type_token = list_of_words[i - 2]
+
+                        # Skip if property type is a modifier keyword
+                        skip_keywords = ['public', 'private', 'protected', 'internal', 'static',
+                                        'readonly', 'virtual', 'override', 'abstract', 'sealed']
+
+                        # Walk backward past modifiers to find the actual type
+                        type_index = i - 2
+                        while type_index >= 0 and list_of_words[type_index] in skip_keywords:
+                            type_index -= 1
+
+                        if type_index >= 0:
+                            property_type_token = list_of_words[type_index]
+
+                            # Skip built-in types
+                            builtin_types = ['string', 'int', 'bool', 'double', 'float', 'long',
+                                           'decimal', 'byte', 'char', 'short', 'object', 'var']
+
+                            base_type = property_type_token.split('<')[0].split('[')[0]
+
+                            if base_type not in builtin_types:
+                                # Check if this type appears in any import
+                                # Strategy: if the type name appears anywhere in the tokens and
+                                # there are imports, assume the type comes from one of the imports
+                                for scanned_import in entity_result.parent_file_result.scanned_import_dependencies:
+                                    # Add the import as a dependency if the type might come from it
+                                    # This is a heuristic: any non-builtin type with an import is likely related
+                                    if scanned_import not in entity_result.scanned_import_dependencies:
+                                        entity_result.scanned_import_dependencies.append(scanned_import)
+                                        LOGGER.debug(f'added property dependency: {scanned_import} from property type {base_type}')
+                                        break  # Only add one import per property
+
+                            # Also check for generic type parameters (types between < and >)
+                            # Look for tokens after the current type_index
+                            for j in range(type_index + 1, min(type_index + 10, len(list_of_words))):
+                                potential_type = list_of_words[j]
+                                if potential_type == '>':
+                                    break
+                                # Check if this is a type (not a symbol)
+                                if potential_type not in [',', '<', '>'] and potential_type not in builtin_types:
+                                    if potential_type.isalnum() or '_' in potential_type:
+                                        for scanned_import in entity_result.parent_file_result.scanned_import_dependencies:
+                                            if scanned_import not in entity_result.scanned_import_dependencies:
+                                                entity_result.scanned_import_dependencies.append(scanned_import)
+                                                LOGGER.debug(f'added property dependency: {scanned_import} from generic parameter {potential_type}')
+                                                break
 
     def _merge_partial_entities(self, analysis):
         """Merge partial class/struct/interface declarations into single entities."""

@@ -350,5 +350,246 @@ class PartialClassMergingTestCase(unittest.TestCase):
         LOGGER.info('completed testing of mixed partial and non-partial classes')
 
 
+# Test data for property dependencies
+SIMPLE_PROPERTY_CLASS = """
+using MyApp.Data;
+
+namespace MyApp.Services
+{
+    public class OrderService
+    {
+        public IRepository Repository { get; set; }
+    }
+}
+"""
+
+GENERIC_PROPERTY_CLASS = """
+using System.Collections.Generic;
+using MyApp.Models;
+
+namespace MyApp.Services
+{
+    public class CustomerService
+    {
+        public List<Customer> Customers { get; set; }
+        public Dictionary<string, Order> Orders { get; set; }
+    }
+}
+"""
+
+ARRAY_PROPERTY_CLASS = """
+using MyApp.Models;
+
+namespace MyApp.Services
+{
+    public class ProductService
+    {
+        public Product[] Products { get; set; }
+    }
+}
+"""
+
+MULTIPLE_PROPERTIES_CLASS = """
+using MyApp.Data;
+using MyApp.Models;
+
+namespace MyApp.Services
+{
+    public class BusinessService
+    {
+        public IRepository Repository { get; set; }
+        public Customer CurrentCustomer { get; set; }
+        private Order _lastOrder { get; set; }
+        protected List<Product> Inventory { get; set; }
+    }
+}
+"""
+
+NO_DEPENDENCY_PROPERTY_CLASS = """
+namespace MyApp.Services
+{
+    public class SimpleService
+    {
+        public string Name { get; set; }
+        public int Count { get; set; }
+    }
+}
+"""
+
+
+class PropertyDependencyTestCase(unittest.TestCase):
+
+    def setUp(self):
+        self.analysis = Analysis()
+        self.analysis.analysis_name = "test"
+        self.analysis.source_directory = "/source"
+        self.parsers = {
+            CSharpParser.parser_name(): CSharpParser()
+        }
+        self.analyzer = Analyzer(None, self.parsers)
+
+    def tearDown(self):
+        pass
+
+    def test_simple_property_dependency(self):
+        """Test that simple property type creates dependency"""
+
+        parser = self.parsers[CSharpParser.parser_name()]
+
+        parser.generate_file_result_from_analysis(
+            self.analysis,
+            file_name="OrderService.cs",
+            full_file_path="/source/OrderService.cs",
+            file_content=SIMPLE_PROPERTY_CLASS
+        )
+
+        self.analysis.collect_results_from_parser(parser)
+
+        # Generate entity results
+        parser.generate_entity_results_from_analysis(self.analysis)
+        self.analysis.collect_results_from_parser(parser)
+
+        # Find the OrderService entity
+        entity_results = [r for r in self.analysis.results.values()
+                         if hasattr(r, 'entity_name') and r.entity_name == 'OrderService']
+
+        self.assertEqual(len(entity_results), 1, "Should have exactly 1 OrderService entity")
+
+        entity = entity_results[0]
+        self.assertIn('MyApp.Data', entity.scanned_import_dependencies,
+                     "Should have dependency on MyApp.Data from IRepository property")
+
+        LOGGER.info('completed testing of simple property dependency')
+
+    def test_generic_property_dependencies(self):
+        """Test that generic property types create dependencies"""
+
+        parser = self.parsers[CSharpParser.parser_name()]
+
+        parser.generate_file_result_from_analysis(
+            self.analysis,
+            file_name="CustomerService.cs",
+            full_file_path="/source/CustomerService.cs",
+            file_content=GENERIC_PROPERTY_CLASS
+        )
+
+        self.analysis.collect_results_from_parser(parser)
+
+        # Generate entity results
+        parser.generate_entity_results_from_analysis(self.analysis)
+        self.analysis.collect_results_from_parser(parser)
+
+        # Find the CustomerService entity
+        entity_results = [r for r in self.analysis.results.values()
+                         if hasattr(r, 'entity_name') and r.entity_name == 'CustomerService']
+
+        self.assertEqual(len(entity_results), 1, "Should have exactly 1 CustomerService entity")
+
+        entity = entity_results[0]
+
+        # Should have MyApp.Models dependency from both Customer and Order generic types
+        self.assertIn('MyApp.Models', entity.scanned_import_dependencies,
+                     "Should have dependency on MyApp.Models from generic properties")
+
+        LOGGER.info('completed testing of generic property dependencies')
+
+    def test_array_property_dependency(self):
+        """Test that array property types create dependencies"""
+
+        parser = self.parsers[CSharpParser.parser_name()]
+
+        parser.generate_file_result_from_analysis(
+            self.analysis,
+            file_name="ProductService.cs",
+            full_file_path="/source/ProductService.cs",
+            file_content=ARRAY_PROPERTY_CLASS
+        )
+
+        self.analysis.collect_results_from_parser(parser)
+
+        # Generate entity results
+        parser.generate_entity_results_from_analysis(self.analysis)
+        self.analysis.collect_results_from_parser(parser)
+
+        # Find the ProductService entity
+        entity_results = [r for r in self.analysis.results.values()
+                         if hasattr(r, 'entity_name') and r.entity_name == 'ProductService']
+
+        self.assertEqual(len(entity_results), 1, "Should have exactly 1 ProductService entity")
+
+        entity = entity_results[0]
+        self.assertIn('MyApp.Models', entity.scanned_import_dependencies,
+                     "Should have dependency on MyApp.Models from Product[] property")
+
+        LOGGER.info('completed testing of array property dependency')
+
+    def test_multiple_properties_different_types(self):
+        """Test that multiple properties with different types all create dependencies"""
+
+        parser = self.parsers[CSharpParser.parser_name()]
+
+        parser.generate_file_result_from_analysis(
+            self.analysis,
+            file_name="BusinessService.cs",
+            full_file_path="/source/BusinessService.cs",
+            file_content=MULTIPLE_PROPERTIES_CLASS
+        )
+
+        self.analysis.collect_results_from_parser(parser)
+
+        # Generate entity results
+        parser.generate_entity_results_from_analysis(self.analysis)
+        self.analysis.collect_results_from_parser(parser)
+
+        # Find the BusinessService entity
+        entity_results = [r for r in self.analysis.results.values()
+                         if hasattr(r, 'entity_name') and r.entity_name == 'BusinessService']
+
+        self.assertEqual(len(entity_results), 1, "Should have exactly 1 BusinessService entity")
+
+        entity = entity_results[0]
+
+        # Should have both MyApp.Data and MyApp.Models dependencies
+        self.assertIn('MyApp.Data', entity.scanned_import_dependencies,
+                     "Should have dependency on MyApp.Data from Repository property")
+        self.assertIn('MyApp.Models', entity.scanned_import_dependencies,
+                     "Should have dependency on MyApp.Models from Customer, Order, Product properties")
+
+        LOGGER.info(f'BusinessService has {len(entity.scanned_import_dependencies)} dependencies')
+        LOGGER.info('completed testing of multiple property dependencies')
+
+    def test_builtin_type_properties_no_dependencies(self):
+        """Test that built-in type properties don't create false dependencies"""
+
+        parser = self.parsers[CSharpParser.parser_name()]
+
+        parser.generate_file_result_from_analysis(
+            self.analysis,
+            file_name="SimpleService.cs",
+            full_file_path="/source/SimpleService.cs",
+            file_content=NO_DEPENDENCY_PROPERTY_CLASS
+        )
+
+        self.analysis.collect_results_from_parser(parser)
+
+        # Generate entity results
+        parser.generate_entity_results_from_analysis(self.analysis)
+        self.analysis.collect_results_from_parser(parser)
+
+        # Find the SimpleService entity
+        entity_results = [r for r in self.analysis.results.values()
+                         if hasattr(r, 'entity_name') and r.entity_name == 'SimpleService']
+
+        self.assertEqual(len(entity_results), 1, "Should have exactly 1 SimpleService entity")
+
+        entity = entity_results[0]
+
+        # Built-in types (string, int) should not create dependencies
+        self.assertEqual(len(entity.scanned_import_dependencies), 0,
+                        "Built-in types should not create dependencies")
+
+        LOGGER.info('completed testing of built-in type properties')
+
+
 if __name__ == '__main__':
     unittest.main()
