@@ -68,6 +68,7 @@ class ConfigKeyAnalysis(EnumKeyValid, Enum):
     """Config key checks of the analysis level."""
     ANALYSIS_NAME = auto()
     SOURCE_DIRECTORY = auto()
+    SOURCE_DIRECTORIES = auto()
     GIT_DIRECTORY = auto()
     GIT_COMMIT_LIMIT = auto()
     GIT_EXCLUDE_MERGE_COMMITS = auto()
@@ -341,14 +342,31 @@ class Configuration:
             return False
 
         # ... which is not empty, and any entry in that list must have at least the following keys:
-        # 'analysis_name', 'source_directory' and they have string values,
+        # 'analysis_name', 'source_directory' (or 'source_directories') and they have valid types,
         # further there is at least one of 'file_scan' or 'entity_scan' per analysis
         analyses = yaml_config[ConfigKeyProject.ANALYSES.name.lower()]
+
+        # Helper function to check if analysis has valid source directory config
+        def has_valid_source_config(analysis):
+            has_single = ConfigKeyAnalysis.SOURCE_DIRECTORY.name.lower() in analysis
+            has_multi = ConfigKeyAnalysis.SOURCE_DIRECTORIES.name.lower() in analysis
+
+            if not (has_single or has_multi):
+                return False
+
+            if has_single and isinstance(analysis[ConfigKeyAnalysis.SOURCE_DIRECTORY.name.lower()], str):
+                return True
+
+            if has_multi and isinstance(analysis[ConfigKeyAnalysis.SOURCE_DIRECTORIES.name.lower()], list):
+                # All entries in source_directories must be strings
+                return all(isinstance(d, str) for d in analysis[ConfigKeyAnalysis.SOURCE_DIRECTORIES.name.lower()])
+
+            return False
+
         if not analyses or \
                 not all(ConfigKeyAnalysis.ANALYSIS_NAME.name.lower() in analysis for analysis in analyses) or \
-                not all(ConfigKeyAnalysis.SOURCE_DIRECTORY.name.lower() in analysis for analysis in analyses) or \
+                not all(has_valid_source_config(analysis) for analysis in analyses) or \
                 not all(isinstance(analysis[ConfigKeyAnalysis.ANALYSIS_NAME.name.lower()], str) for analysis in analyses) or \
-                not all(isinstance(analysis[ConfigKeyAnalysis.SOURCE_DIRECTORY.name.lower()], str) for analysis in analyses) or \
                 not all(ConfigKeyAnalysis.FILE_SCAN.name.lower() in analysis or \
                     ConfigKeyAnalysis.ENTITY_SCAN.name.lower() in analysis for analysis in analyses):
             self._invalid_yaml_config(yaml_config)
@@ -711,7 +729,16 @@ class Configuration:
                 analysis.scan_types.append(ConfigKeyAnalysis.ENTITY_SCAN.name.lower())
 
             analysis.analysis_name = analysis_dict[ConfigKeyAnalysis.ANALYSIS_NAME.name.lower()]
-            analysis.source_directory = analysis_dict[ConfigKeyAnalysis.SOURCE_DIRECTORY.name.lower()]
+
+            # Handle both source_directory (single) and source_directories (multiple)
+            if ConfigKeyAnalysis.SOURCE_DIRECTORIES.name.lower() in analysis_dict:
+                # Multi-directory mode
+                analysis.source_directories = analysis_dict[ConfigKeyAnalysis.SOURCE_DIRECTORIES.name.lower()]
+                analysis.source_directory = analysis.source_directories[0] if analysis.source_directories else None
+            elif ConfigKeyAnalysis.SOURCE_DIRECTORY.name.lower() in analysis_dict:
+                # Single directory mode (backward compatible)
+                analysis.source_directory = analysis_dict[ConfigKeyAnalysis.SOURCE_DIRECTORY.name.lower()]
+                analysis.source_directories = [analysis.source_directory]
 
             if ConfigKeyAnalysis.ONLY_PERMIT_LANGUAGES.name.lower() in analysis_dict:
                 analysis.only_permit_languages = analysis_dict[ConfigKeyAnalysis.ONLY_PERMIT_LANGUAGES.name.lower()]

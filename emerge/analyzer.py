@@ -67,13 +67,14 @@ class Analyzer:
 
         start_time = datetime.now()
 
-        if analysis.source_directory is None:
-            raise Exception('source directory is not set')
+        if not analysis.source_directories:
+            raise Exception('source_directories is not set')
 
-         # check if source directoy really exists, otherwise log error and throw exception
-        if not os.path.isdir(analysis.source_directory):
-            LOGGER.error(f'error in analysis {analysis.analysis_name}: source directory not found/ accessible: {analysis.source_directory}')
-            raise NotADirectoryError(f'error in analysis {analysis.analysis_name}: source directory not found/ accessible: {analysis.source_directory}')
+        # check if source directories really exist, otherwise log error and throw exception
+        for source_directory in analysis.source_directories:
+            if not os.path.isdir(source_directory):
+                LOGGER.error(f'error in analysis {analysis.analysis_name}: source directory not found/accessible: {source_directory}')
+                raise NotADirectoryError(f'error in analysis {analysis.analysis_name}: source directory not found/accessible: {source_directory}')
 
         self._create_filesystem_graph(analysis)
         LOGGER.info_done('created the filesystem graph')

@@ -104,6 +104,25 @@ class GraphRepresentation:
         LOGGER.debug('creating complete graph...')
         self._digraph = nx.compose(dependency_graph_repr.digraph, inheritance_graph_repr.digraph)
 
+    def add_source_directory_to_entity_nodes(self, entity_results: Dict[str, Any], filesystem_graph: 'GraphRepresentation') -> None:
+        """Adds source_directory attribute to entity nodes by looking up their parent file in the filesystem graph.
+
+        Args:
+            entity_results: Dictionary of entity results
+            filesystem_graph: The filesystem graph representation containing source directory information
+        """
+        if not filesystem_graph or not hasattr(filesystem_graph, 'filesystem_nodes'):
+            return
+
+        for node_name in self._digraph.nodes:
+            if node_name in entity_results:
+                entity_result = entity_results[node_name]
+                if hasattr(entity_result, 'parent_file_result') and entity_result.parent_file_result:
+                    file_path = entity_result.parent_file_result.unique_name
+                    file_node = filesystem_graph.filesystem_nodes.get(file_path)
+                    if file_node and hasattr(file_node, 'source_directory_label') and file_node.source_directory_label:
+                        self._digraph.nodes[node_name]['source_directory'] = file_node.source_directory_label
+
     def add_local_metric_results_to_graph_nodes(self, metric_results: Dict[str, Dict[str, Any]]) -> None:
         """Adds/maps local metric results to graph nodes.
         """
@@ -170,10 +189,11 @@ class FileSystemNode:
     """Small representation of a filesystem object, e.g. a directory or a file. This class is currently used to build the filesystem graph.
     """
 
-    def __init__(self, node_type: FileSystemNodeType, absolute_name: str, content: Optional[str] = None):
+    def __init__(self, node_type: FileSystemNodeType, absolute_name: str, content: Optional[str] = None, source_directory_label: Optional[str] = None):
         self.type: FileSystemNodeType = node_type
         self.absolute_name: str = absolute_name
         self.content: Optional[str] = content
+        self.source_directory_label: Optional[str] = source_directory_label  # For multi-target scanning
 
     def __hash__(self):
         return hash(self.absolute_name)

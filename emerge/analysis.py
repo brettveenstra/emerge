@@ -43,6 +43,7 @@ class Analysis:
         self.analysis_name: Optional[str] = None
         self.project_name: Optional[str] = None
         self.source_directory: Optional[str] = None
+        self.source_directories: List[str] = []  # Multi-target scanning support
         self.git_directory: Optional[str] = None
         self.include_git_metrics: Optional[bool] = False
         self.git_commit_limit: Optional[int] = 150
@@ -439,134 +440,153 @@ class Analysis:
         """Creates a filesystem graph which is basically a graph representation of the project filesystem tree.
         This filesystem graph is used for further calculations and metric results.
         The filesystem graph does NOT contain file content, only the graph structure. The content is stored in the self.filesyste_nodes dict.
+
+        Supports scanning multiple source directories (multi-target scanning).
         """
 
-        if self.source_directory is None:
-            raise Exception('source_directory is not set')
+        if not self.source_directories:
+            raise Exception('source_directories is not set')
 
         LOGGER.info_start(f'starting to create filesystem graph in {self.analysis_name}')
-        LOGGER.info(f'starting scan at directory: {truncate_directory(self.source_directory)}')
+
+        if len(self.source_directories) == 1:
+            LOGGER.info(f'starting scan at directory: {truncate_directory(self.source_directories[0])}')
+        else:
+            LOGGER.info(f'starting multi-target scan at {len(self.source_directories)} directories')
+            for idx, source_dir in enumerate(self.source_directories, 1):
+                LOGGER.info(f'  [{idx}] {truncate_directory(source_dir)}')
 
         scanned_files, skipped_files = 0, 0
         scanning_starts = datetime.now()
 
         filesystem_graph = self.graph_representations[GraphType.FILESYSTEM_GRAPH.name.lower()]
 
-        # create a root directory filesystem node, add to project graph
+        # Scan each source directory
+        for source_directory_idx, source_directory in enumerate(self.source_directories):
+            LOGGER.debug(f'scanning source directory [{source_directory_idx + 1}/{len(self.source_directories)}]: {source_directory}')
 
-        parent_analysis_source_path = f"{Path(self.source_directory).parent}/"
-        relative_file_path_to_analysis = self.source_directory.replace(parent_analysis_source_path, "")
+            # Derive source directory label (e.g., "ServiceA" from "/repos/ServiceA")
+            source_dir_label = Path(source_directory).name
 
-        filesystem_root_node = FileSystemNode(FileSystemNodeType.DIRECTORY, relative_file_path_to_analysis)
-        filesystem_graph.filesystem_nodes[filesystem_root_node.absolute_name] = filesystem_root_node
+            # create a root directory filesystem node, add to project graph
+            parent_analysis_source_path = f"{Path(source_directory).parent}/"
+            relative_file_path_to_analysis = source_directory.replace(parent_analysis_source_path, "")
 
-        filesystem_graph.digraph.add_node(
-            filesystem_root_node.absolute_name,
-            directory=True,
-            file=False,
-            display_name=filesystem_root_node.absolute_name
-        )
-
-        for root, dirs, files in os.walk(self.source_directory):
-            # exclude directories and scans
-
-            if self.ignore_directories_containing:
-                dirs[:] = [d for d in dirs if d not in self.ignore_directories_containing]
-
-            for directory in dirs:
-                absolute_path_to_directory = os.path.join(root, directory)
-
-                # create relative analysis paths to exactly match the same path of nodes in other graphs (and get their metrics)
-                parent_analysis_source_path = f"{Path(absolute_path_to_directory).parent}/"
-                relative_file_path_to_analysis = absolute_path_to_directory.replace(parent_analysis_source_path, "")
-                relative_path_parent = f'{Path(root)}'.replace(f'{ Path(self.source_directory).parent}/', "")
-                relative_path_directoy_node = f'{Path(root)}/{relative_file_path_to_analysis}'.replace(
-                    f"{Path(self.source_directory).parent}/", "")
-
-                directory_node = FileSystemNode(FileSystemNodeType.DIRECTORY, relative_path_directoy_node)
-                filesystem_graph.filesystem_nodes[directory_node.absolute_name] = directory_node
+            filesystem_root_node = FileSystemNode(FileSystemNodeType.DIRECTORY, relative_file_path_to_analysis, source_directory_label=source_dir_label)
+            if filesystem_root_node.absolute_name not in filesystem_graph.filesystem_nodes:
+                filesystem_graph.filesystem_nodes[filesystem_root_node.absolute_name] = filesystem_root_node
 
                 filesystem_graph.digraph.add_node(
-                    directory_node.absolute_name,
+                    filesystem_root_node.absolute_name,
                     directory=True,
                     file=False,
-                    display_name=directory_node.absolute_name
+                    display_name=filesystem_root_node.absolute_name,
+                    source_directory=source_dir_label
                 )
 
-                filesystem_graph.digraph.add_edge(relative_path_parent, relative_path_directoy_node)
+            for root, dirs, files in os.walk(source_directory):
+                # exclude directories and scans
 
-            if self.ignore_files_containing:
-                files[:] = [f for f in files if not any(substring in f for substring in self.ignore_files_containing)]
+                if self.ignore_directories_containing:
+                    dirs[:] = [d for d in dirs if d not in self.ignore_directories_containing]
 
-            for file_name in files:
-                absolute_path_to_file = os.path.join(root, file_name)
+                for directory in dirs:
+                    absolute_path_to_directory = os.path.join(root, directory)
 
-                # check if the scan should only allow specific files
-                if self.only_permit_files_matching_absolute_path_available:
-                    if absolute_path_to_file not in self.only_permit_files_matching_absolute_path:
+                    # create relative analysis paths to exactly match the same path of nodes in other graphs (and get their metrics)
+                    parent_analysis_source_path = f"{Path(absolute_path_to_directory).parent}/"
+                    relative_file_path_to_analysis = absolute_path_to_directory.replace(parent_analysis_source_path, "")
+                    relative_path_parent = f'{Path(root)}'.replace(f'{ Path(source_directory).parent}/', "")
+                    relative_path_directoy_node = f'{Path(root)}/{relative_file_path_to_analysis}'.replace(
+                        f"{Path(source_directory).parent}/", "")
+
+                    directory_node = FileSystemNode(FileSystemNodeType.DIRECTORY, relative_path_directoy_node, source_directory_label=source_dir_label)
+                    if directory_node.absolute_name not in filesystem_graph.filesystem_nodes:
+                        filesystem_graph.filesystem_nodes[directory_node.absolute_name] = directory_node
+
+                        filesystem_graph.digraph.add_node(
+                            directory_node.absolute_name,
+                            directory=True,
+                            file=False,
+                            display_name=directory_node.absolute_name,
+                            source_directory=source_dir_label
+                        )
+
+                        filesystem_graph.digraph.add_edge(relative_path_parent, relative_path_directoy_node)
+
+                if self.ignore_files_containing:
+                    files[:] = [f for f in files if not any(substring in f for substring in self.ignore_files_containing)]
+
+                for file_name in files:
+                    absolute_path_to_file = os.path.join(root, file_name)
+
+                    # check if the scan should only allow specific files
+                    if self.only_permit_files_matching_absolute_path_available:
+                        if absolute_path_to_file not in self.only_permit_files_matching_absolute_path:
+                            skipped_files += 1
+                            LOGGER.info(f'ignoring file {absolute_path_to_file} due to only_scan_files restriction')
+                            continue
+                        else:
+                            LOGGER.info(f'got file {absolute_path_to_file}')
+
+                    # watch out for symlinks
+                    if os.path.islink(absolute_path_to_file):
+                        LOGGER.debug(f'possible symlink found: {absolute_path_to_file}')
+                        absolute_path_to_file_resolved_symlink = os.path.realpath(absolute_path_to_file)
+                        if os.path.exists(absolute_path_to_file_resolved_symlink):
+                            absolute_path_to_file = absolute_path_to_file_resolved_symlink
+                            LOGGER.debug(f'could resolve symlink {absolute_path_to_file} to {absolute_path_to_file_resolved_symlink}')
+                        else:
+                            LOGGER.warning(f'ignoring unresolvable symlink {absolute_path_to_file}')
+                            continue
+
+                    file_name, file_extension = os.path.splitext(absolute_path_to_file)
+
+                    # create relative analysis path to exactly match the same path of nodes in other graphs (and get their metrics)
+                    parent_analysis_source_path = f"{Path(absolute_path_to_file).parent}/"
+                    relative_root = f'{Path(root)}'.replace(f'{ Path(source_directory).parent}/', "")
+                    relative_file_path_to_analysis = absolute_path_to_file.replace(f'{Path(source_directory).parent}/', "")
+
+                    if not self.file_extension_allowed(file_extension):
+                        if not file_extension.strip():
+                            LOGGER.info(f'ignoring {absolute_path_to_file}')
+                        else:
+                            LOGGER.info(f'{file_extension} is not allowed in the scan, ignoring {absolute_path_to_file}')
                         skipped_files += 1
-                        LOGGER.info(f'ignoring file {absolute_path_to_file} due to only_scan_files restriction')
-                        continue
-                    else:
-                        LOGGER.info(f'got file {absolute_path_to_file}')
-
-                # watch out for symlinks
-                if os.path.islink(absolute_path_to_file):
-                    LOGGER.debug(f'possible symlink found: {absolute_path_to_file}')
-                    absolute_path_to_file_resolved_symlink = os.path.realpath(absolute_path_to_file)
-                    if os.path.exists(absolute_path_to_file_resolved_symlink):
-                        absolute_path_to_file = absolute_path_to_file_resolved_symlink
-                        LOGGER.debug(f'could resolve symlink {absolute_path_to_file} to {absolute_path_to_file_resolved_symlink}')
-                    else:
-                        LOGGER.warning(f'ignoring unresolvable symlink {absolute_path_to_file}')
                         continue
 
-                file_name, file_extension = os.path.splitext(absolute_path_to_file)
+                    if not LanguageExtension.value_exists(file_extension):
+                        LOGGER.info(f'{file_extension} is an unknown extension, ignoring {absolute_path_to_file}')
+                        skipped_files += 1
+                        continue
 
-                # create relative analysis path to exactly match the same path of nodes in other graphs (and get their metrics)
-                parent_analysis_source_path = f"{Path(absolute_path_to_file).parent}/"
-                relative_root = f'{Path(root)}'.replace(f'{ Path(self.source_directory).parent}/', "")
-                relative_file_path_to_analysis = absolute_path_to_file.replace(f'{Path(self.source_directory).parent}/', "")
+                    # build up a set of relative names to speed up computational checks later
+                    # also add it as property to the filesystem graph
+                    self.absolute_scanned_file_names.add(relative_file_path_to_analysis)
 
-                if not self.file_extension_allowed(file_extension):
-                    if not file_extension.strip():
-                        LOGGER.info(f'ignoring {absolute_path_to_file}')
+                    if relative_root not in self.scanned_files_nodes_in_directories:
+                        self.scanned_files_nodes_in_directories[relative_root] = []
+                        self.scanned_files_nodes_in_directories[relative_root].append(relative_file_path_to_analysis)
                     else:
-                        LOGGER.info(f'{file_extension} is not allowed in the scan, ignoring {absolute_path_to_file}')
-                    skipped_files += 1
-                    continue
+                        self.scanned_files_nodes_in_directories[relative_root].append(relative_file_path_to_analysis)
 
-                if not LanguageExtension.value_exists(file_extension):
-                    LOGGER.info(f'{file_extension} is an unknown extension, ignoring {absolute_path_to_file}')
-                    skipped_files += 1
-                    continue
+                    with open(absolute_path_to_file, encoding="ISO-8859-1") as file:
+                        file_content = file.read()
+                        file_node = FileSystemNode(FileSystemNodeType.FILE, relative_file_path_to_analysis, file_content, source_directory_label=source_dir_label)
+                        filesystem_graph.filesystem_nodes[file_node.absolute_name] = file_node
 
-                # build up a set of relative names to speed up computational checks later
-                # also add it as property to the filesystem graph
-                self.absolute_scanned_file_names.add(relative_file_path_to_analysis)
+                        filesystem_graph.digraph.add_node(
+                            file_node.absolute_name,
+                            directory=False,
+                            file=True,
+                            display_name=Path(file_node.absolute_name).name,
+                            result_name=relative_file_path_to_analysis,
+                            source_directory=source_dir_label
+                        )
 
-                if relative_root not in self.scanned_files_nodes_in_directories:
-                    self.scanned_files_nodes_in_directories[relative_root] = []
-                    self.scanned_files_nodes_in_directories[relative_root].append(relative_file_path_to_analysis)
-                else:
-                    self.scanned_files_nodes_in_directories[relative_root].append(relative_file_path_to_analysis)
+                        filesystem_graph.digraph.add_edge(relative_root, file_node.absolute_name)
 
-                with open(absolute_path_to_file, encoding="ISO-8859-1") as file:
-                    file_content = file.read()
-                    file_node = FileSystemNode(FileSystemNodeType.FILE, relative_file_path_to_analysis, file_content)
-                    filesystem_graph.filesystem_nodes[file_node.absolute_name] = file_node
-
-                    filesystem_graph.digraph.add_node(
-                        file_node.absolute_name,
-                        directory=False,
-                        file=True,
-                        display_name=Path(file_node.absolute_name).name,
-                        result_name=relative_file_path_to_analysis
-                    )
-
-                    filesystem_graph.digraph.add_edge(relative_root, file_node.absolute_name)
-
-                    scanned_files += 1
+                        scanned_files += 1
 
         scanning_stops = datetime.now()
 
@@ -599,6 +619,14 @@ class Analysis:
             if name == GraphType.ENTITY_RESULT_INHERITANCE_GRAPH.name.lower():
                 representation.calculate_inheritance_graph_from_results(entity_results)
 
+        # Add source_directory information to entity graph nodes
+        filesystem_graph = self.graph_representations.get(GraphType.FILESYSTEM_GRAPH.name.lower())
+        if filesystem_graph and entity_results:
+            for name, representation in simple_graph_representations.items():
+                if name in [GraphType.ENTITY_RESULT_DEPENDENCY_GRAPH.name.lower(),
+                           GraphType.ENTITY_RESULT_INHERITANCE_GRAPH.name.lower()]:
+                    representation.add_source_directory_to_entity_nodes(entity_results, filesystem_graph)
+
         # now if necessary compute the compositions
         for name, representation in complete_graph_representation.items():
             if name == GraphType.ENTITY_RESULT_COMPLETE_GRAPH.name.lower():
@@ -608,6 +636,9 @@ class Analysis:
                         dependency_graph_repr=simple_graph_representations[GraphType.ENTITY_RESULT_DEPENDENCY_GRAPH.name.lower()],
                         inheritance_graph_repr=simple_graph_representations[GraphType.ENTITY_RESULT_INHERITANCE_GRAPH.name.lower()]
                     )
+                    # Add source_directory to complete graph nodes as well
+                    if filesystem_graph and entity_results:
+                        representation.add_source_directory_to_entity_nodes(entity_results, filesystem_graph)
 
     def add_local_metric_results_to_graphs(self) -> None:
         """Adds local metric results to all existing graph representations within this analysis.

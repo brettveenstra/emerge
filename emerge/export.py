@@ -570,6 +570,7 @@ class TSVExporter:
                 'Entity',
                 'Namespace',
                 'File',
+                'SourceDirectory',
                 'Language',
                 'SLOC',
                 'NumberOfMethods',
@@ -607,10 +608,22 @@ class TSVExporter:
                 else:
                     keywords_str = ''
 
+                # Get source directory label from filesystem graph
+                source_dir = ''
+                if hasattr(analysis, 'graph_representations'):
+                    filesystem_graph = analysis.graph_representations.get('filesystem_graph')
+                    if filesystem_graph and hasattr(filesystem_graph, 'filesystem_nodes'):
+                        # Use parent file result's unique_name (full path) to lookup filesystem node
+                        file_path = entity_result.parent_file_result.unique_name if hasattr(entity_result, 'parent_file_result') and entity_result.parent_file_result else entity_result.scanned_file_name
+                        file_node = filesystem_graph.filesystem_nodes.get(file_path)
+                        if file_node and hasattr(file_node, 'source_directory_label'):
+                            source_dir = file_node.source_directory_label or ''
+
                 writer.writerow([
                     entity_result.entity_name,
                     entity_result.module_name,
                     entity_result.scanned_file_name,
+                    source_dir,
                     entity_result.scanned_language.name if hasattr(entity_result.scanned_language, 'name') else str(entity_result.scanned_language),
                     sloc,
                     num_methods,
